@@ -1,0 +1,8 @@
+{
+  "name": "deep-posting-bot",
+  "version": "1.0.0",
+  "main": "deep_bot.js",
+  "scripts": {
+    "start": "node deep_bot.js"
+  }
+}
