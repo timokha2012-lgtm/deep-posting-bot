@@ -209,7 +209,7 @@ function scheduleDaily() {
   const moscow = getMoscowTime();
   console.log(`Бот запущен. Время МСК: ${moscow.getHours()}:${String(moscow.getMinutes()).padStart(2,'0')}`);
 
-  const msToMorning = msUntil(9);
+  const msToMorning = msUntil(10);
   const msToEvening = msUntil(18);
 
   console.log(`Утренний пост через ${Math.round(msToMorning/60000)} мин`);
