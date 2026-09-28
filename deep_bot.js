@@ -1,97 +1,109 @@
+// Глубокий пост 10:00 и вечерний интерактив 18:00 для «Восстановление личности» (@Helpforaddicts)
 const https = require('https');
 
 const TG_TOKEN = process.env.TG_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-const CHANNELS = ['@go_rehab', '@Helpforaddicts'];
+const CHANNELS = (process.env.CHANNELS || '@Helpforaddicts').split(',').map(s => s.trim());
+const MODEL = process.env.MODEL || 'claude-sonnet-4-6';
 
-const STYLE = `Ты пишешь глубокие психологические посты для Telegram канала о восстановлении личности и зависимости.
-
-Стиль постов:
-- Прямое обращение на "ты"
-- Короткие абзацы, каждый — одна мысль
-- Острая психологическая правда без украшений
-- Библейская цитата органично вписана в текст (не в начале)
-- В конце — триггерный вопрос для комментариев
-- Хэштеги в конце
-
-Темы которые цепляют эту аудиторию:
-- роль спасателя, сильного, удобного, контролёра, жертвы
-- стыд, вина, страх отвержения
-- созависимость и зависимость
-- потеря себя в служении
-- злость спрятанная за добротой
-- жизнь ради чужого одобрения
-- невозможность попросить помощь
-- контроль как форма тревоги
-- молчание вместо правды
-- границы и их отсутствие
-
-Утренний пост: глубокий, острый, узнаваемый. 150-200 слов. Заканчивается одним триггерным вопросом.
-Вечерний пост: чек-лист ИЛИ опрос с триггерными вопросами. 100-150 слов.`;
-
-const MORNING_TOPICS = [
-  'злость которую ты прячешь за добротой и называешь смирением',
-  'ты живёшь ради одобрения и сам это знаешь',
-  'стыд который заставляет тебя молчать годами',
-  'ты называешь это любовью но на самом деле это контроль',
-  'почему тебе так трудно принять помощь',
-  'ты помогаешь всем кроме себя',
-  'граница которую ты боишься поставить',
-  'ты давно устал но продолжаешь делать вид что справляешься',
-  'одиночество внутри толпы близких людей',
-  'ты ждёшь разрешения жить',
-  'вина как способ не брать ответственность',
-  'ты заслуживаешь любовь или получаешь её за поведение',
-  'почему срыв начинается задолго до срыва',
-  'ты живёшь в хроническом напряжении и считаешь это нормой',
-  'молчание которое разрушает изнутри',
-  'ты боишься быть собой потому что однажды за это наказали',
-  'служение из страха а не из любви',
-  'почему тебе легче сломаться чем попросить',
-  'ты не умеешь отдыхать без чувства вины',
-  'доверие которое ты давно потерял',
-  'ты контролируешь потому что когда-то всё вышло из-под контроля',
-  'пустота которую ты заполняешь чужими проблемами',
-  'ты живёшь не своей жизнью уже так давно что забыл какая она',
-  'страх быть никем если перестанешь быть нужным',
-  'когда боль становится привычнее чем радость'
-];
-
-const EVENING_FORMATS = ['checklist', 'poll', 'checklist', 'poll', 'checklist'];
-
-function getTodayTopics() {
-  const day = new Date().getDate();
-  const morning = MORNING_TOPICS[day % MORNING_TOPICS.length];
-  const eveningFormat = EVENING_FORMATS[day % EVENING_FORMATS.length];
-  return { morning, eveningFormat };
+// Нумерация #деньN сохранена: 16.04.2026 был день 76
+function getDayNumber() {
+  return 76 + Math.floor((getMoscowNow() - new Date('2026-04-16T00:00:00')) / 86400000);
 }
 
-function getDayNumber() {
-  const start = new Date('2026-04-16');
+// Темы глубокого поста — не ярлыки («контроль»), а противоречие, в котором человек живёт
+const TOPICS = [
+  'злость, которую ты называешь смирением',
+  'ты любишь его — и тебе удобно, что он зависит от тебя',
+  'ты бросил пить, но не перестал врать',
+  'стыд не за поступок, а за то, что ты вообще есть',
+  'ты просишь у Бога чуда, чтобы не просить прощения у людей',
+  'срыв начинается за три недели до первой рюмки',
+  'ты держишь семью — и семья держится на твоём страхе',
+  'помогать другим проще, чем посмотреть на себя',
+  'ты не можешь отдыхать, потому что покой похож на пустоту',
+  'обида на отца, которую ты повторяешь со своими детьми',
+  'ты веришь в прощение для всех, кроме себя',
+  'трезвость без радости — это просто пауза',
+  'ты молчишь «ради мира», а мира нет',
+  'быть нужным стало важнее, чем быть живым',
+  'ты живёшь в режиме «пережить», а не «жить»',
+  'зависимость — не про вещество, а про бегство от одного чувства',
+  'ты контролируешь других, чтобы не чувствовать собственный хаос',
+  'ты ищешь человека, который тебя спасёт, и снова выбираешь того, кого надо спасать',
+  'вина удобнее ответственности: можно страдать и ничего не менять',
+  'ты хочешь, чтобы тебя поняли, но никому ничего не рассказываешь',
+  'религиозность как новая зависимость',
+  'ты ненавидишь в других то, что прячешь в себе',
+  'одиночество, которое ты сам себе устроил, чтобы никто не ранил',
+  'ты ждёшь, когда станет не страшно, чтобы начать',
+  'старая жизнь убивала, но была понятной',
+  'ты требуешь от себя идеальности и поэтому не делаешь ничего',
+  'прощение — не чувство, а решение, которое болит',
+  'мать, которая «всё для тебя», и цена этого «всё»',
+  'ты путаешь интенсивность с любовью',
+  'ты боишься не срыва, а того, что без зависимости ты — никто',
+];
+
+// Линза меняется по дням — чтобы посты не были на одно лицо
+const LENSES = {
+  1: 'МЕХАНИЗМ: разбери по шагам, как это устроено внутри — что человек чувствует, что себе говорит, что делает, что получает взамен. Как будто показываешь часовой механизм под стеклом.',
+  2: 'БИБЛЕЙСКАЯ СЦЕНА: одна сцена из Писания, в которой видна эта же ловушка (Иаков, Давид, Пётр, блудный сын и его старший брат, Иона, Марфа, Саул и др. — выбери неочевидно). Сначала человек сегодня, сцена — с третьего абзаца. Не пересказ, а одна деталь, которая бьёт. Без номеров глав.',
+  3: 'СЕМЬЯ И КОРНИ: откуда это пришло — из какой семьи, какой роли, какого правила «у нас так не принято». Без обвинения родителей, но и без их оправдания.',
+  4: 'ПАРАДОКС: построй пост вокруг парадокса — то, что кажется силой, оказывается слабостью, и наоборот. Покажи, почему очевидное решение делает только хуже.',
+  5: 'ТЕЛО И БУДНИ: через тело и бытовые мелочи — как это видно в том, как человек ест, спит, держит телефон, говорит с кассиршей. Психология через конкретику.',
+  6: 'ВЕРА БЕЗ ГЛЯНЦА: где здесь Бог — не как утешение, а как правда. Грех как промах мимо цели, благодать как то, что не заработать. Честно о том, где религиозность становится укрытием.',
+  0: 'ВЫХОД: как выглядит первый реальный шаг из этой ловушки — не лозунг, а что конкретно делают люди, у которых получилось. Что будет мешать и как это пережить.',
+};
+
+const BANNED = [
+  'У тебя все получится', 'главное верь', 'ты не один', 'ты не одна', 'это нормально',
+  'маленькими шагами', 'путь к себе', 'важно помнить', 'важно понимать', 'Бог тебя любит',
+  'всё будет хорошо', 'правда в том, что', 'дай себе время', 'ты достоин', 'и это нормально',
+  'А ты узнал себя?', 'Узнаёшь себя?', 'Напиши в комментариях',
+];
+
+const SYSTEM = `Ты пишешь глубокие посты для Telegram-канала «Восстановление личности» Дмитрия Петрова — реабилитолога, руководителя центра для зависимых. Он соединяет КПТ, логотерапию Франкла, теорию привязанности и Писание. Читатели: зависимые, созависимые, люди в кризисе, служители. Верующие и нет.
+
+Голос: умный друг, который сам через это прошёл. Говорит правду в глаза, но не добивает. Без проповеди, без утешительства, без психологических терминов в лоб.
+
+Жёсткие правила:
+- 180–260 слов. Абзацы по 1–3 предложения.
+- Первая строка — удар: сцена, фраза человека или парадокс. Никаких вступлений.
+- Одна мысль на весь пост, раскрытая в глубину, а не пять мыслей по верхам.
+- Конкретика: действия, слова, детали. Не «ты чувствуешь стыд», а «ты не берёшь трубку, когда звонит брат».
+- Не выдумывай реальных людей с именами и возрастом как «случай из практики». Можно: «ты», «на группе часто звучит…», библейские герои.
+- Библия — только если работает на мысль: сцена или одно слово, не цитата для галочки. Цитату давай своими словами или точно, без номера главы.
+- Ближе к концу — одно конкретное действие на сегодня.
+- Последняя строка — вопрос, который нельзя отбить шуткой. Не «узнаёшь себя?», а вопрос про конкретный выбор.
+- Без хэштегов, эмодзи, заголовков, markdown и звёздочек.
+- Запрещено (и их перепевы): ${BANNED.join('; ')}.`;
+
+function getMoscowNow() {
   const now = new Date();
-  const diff = Math.floor((now - start) / (1000 * 60 * 60 * 24));
-  return 76 + diff;
+  return new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 3 * 3600000);
+}
+
+function dayOfYear(d) {
+  return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+}
+
+function todayTopic() {
+  // шаг 11 взаимно прост с 30 — темы идут вразнобой и не встают на ту же линзу неделями
+  return TOPICS[(dayOfYear(getMoscowNow()) * 11) % TOPICS.length];
 }
 
 function apiRequest(hostname, path, data, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(data);
-    const opts = {
+    const req = https.request({
       hostname, path, method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        ...extraHeaders
-      }
-    };
-    const req = https.request(opts, res => {
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...extraHeaders },
+    }, res => {
       res.setEncoding('utf8');
       let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(d)); }
-        catch(e) { resolve({ error: d }); }
-      });
+      res.on('data', c => (d += c));
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { resolve({ error: d }); } });
     });
     req.on('error', reject);
     req.write(body);
@@ -99,136 +111,78 @@ function apiRequest(hostname, path, data, extraHeaders = {}) {
   });
 }
 
-async function generatePost(type) {
-  const { morning, eveningFormat } = getTodayTopics();
-  const dayNum = getDayNumber();
-  const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-
-  let prompt;
-
-  if (type === 'morning') {
-    prompt = `${STYLE}
-
-Напиши УТРЕННИЙ пост #день${dayNum} на острую тему: «${morning}»
-
-Структура:
-1. Острое начало — сразу в боль без предисловий
-2. 4-6 коротких абзацев — каждый одна мысль
-3. Библейская цитата органично вписана
-4. Практика на сегодня — одно конкретное действие
-5. Триггерный вопрос для комментариев
-6. Хэштеги: #восстановлениеличности #день${dayNum} и 2-3 тематических #helpforaddicts
-
-Не пиши дату. Не пиши вступление. Начни сразу с сути.
-Пиши только сам пост.`;
-  } else {
-    const format = eveningFormat === 'checklist' ? 'ЧЕК-ЛИСТ' : 'ОПРОС';
-    prompt = `${STYLE}
-
-Напиши ВЕЧЕРНИЙ пост #день${dayNum} в формате ${format} по теме: «${morning}»
-
-${eveningFormat === 'checklist' ? `Структура чек-листа:
-- Заголовок ЧЕК-ЛИСТ: [тема]
-- 7-8 пунктов с тире, каждый — узнаваемая ситуация
-- Итог после чек-листа — острый вывод
-- 2-3 триггерных вопроса
-- Призыв написать в комментарии
-- Хэштеги: #восстановлениеличности #день${dayNum} #чеклист и тематические #helpforaddicts` 
-: `Структура опроса:
-- Острый вводный текст 3-4 абзаца
-- Варианты для опроса (5-6 штук)
-- 2-3 триггерных вопроса
-- Призыв написать в комментарии не только вариант но и почему
-- Хэштеги: #восстановлениеличности #день${dayNum} #опрос и тематические #helpforaddicts`}
-
-Пиши только сам пост.`;
-  }
-
-  const result = await apiRequest(
-    'api.anthropic.com',
-    '/v1/messages',
-    {
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }]
-    },
-    {
-      'x-api-key': ANTHROPIC_KEY,
-      'anthropic-version': '2023-06-01'
-    }
-  );
-
-  if (result.error || !result.content) {
-    throw new Error('API error: ' + JSON.stringify(result));
-  }
-
-  return result.content.map(i => i.text || '').join('').trim();
+async function claude(userPrompt, maxTokens) {
+  const r = await apiRequest('api.anthropic.com', '/v1/messages', {
+    model: MODEL, max_tokens: maxTokens, temperature: 1, system: SYSTEM,
+    messages: [{ role: 'user', content: userPrompt }],
+  }, { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' });
+  if (r.error || !r.content) throw new Error('API error: ' + JSON.stringify(r).slice(0, 300));
+  return r.content.map(i => i.text || '').join('').trim().replace(/\*\*/g, '').replace(/#\S+/g, '').trim();
 }
 
-async function sendToChannel(channelId, text) {
-  return apiRequest(
-    'api.telegram.org',
-    `/bot${TG_TOKEN}/sendMessage`,
-    { chat_id: channelId, text, parse_mode: 'HTML' }
-  );
+function tags(extra = '') {
+  return `\n\n#восстановлениеличности #день${getDayNumber()}${extra}`;
 }
 
-async function postToAll(type) {
-  console.log(`Генерирую ${type === 'morning' ? 'утренний' : 'вечерний'} пост...`);
+async function morningPost() {
+  const topic = todayTopic();
+  const lens = LENSES[getMoscowNow().getDay()];
+  const text = await claude(`Тема: «${topic}».\nЛинза сегодня: ${lens}\n\nНапиши только текст поста.`, 1200);
+  return { text: text + tags(), label: `утро | ${topic}` };
+}
+
+// Вечер: чётные дни — чек-лист, нечётные — опрос (настоящий Telegram-опрос)
+async function eveningPost() {
+  const topic = todayTopic();
+  if (dayOfYear(getMoscowNow()) % 2 === 0) {
+    const text = await claude(
+      `Вечерний ЧЕК-ЛИСТ по теме утра: «${topic}».
+Формат: одна строка-заход, затем 7 пунктов с тире — каждый конкретное поведение, которое человек узнает за собой (не чувство, а поступок). Затем 2 предложения честного вывода: что значит, если совпало 4 и больше. Последней строкой — предложи написать номер пункта, который задел сильнее всего. 90–140 слов.`, 800);
+    return { text: text + tags(' #чеклист'), label: `вечер чек-лист | ${topic}` };
+  }
+  const raw = await claude(
+    `Вечерний ОПРОС по теме утра: «${topic}».
+Верни строго JSON без пояснений: {"intro": "2–3 коротких абзаца захода, 50–90 слов, без вопроса опроса", "question": "вопрос опроса до 250 символов", "options": ["5 вариантов, каждый до 90 символов, все честные, без одного правильного"]}`, 800);
+  const json = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+  return { text: json.intro + tags(' #опрос'), poll: json, label: `вечер опрос | ${topic}` };
+}
+
+async function publish(kind, { dryRun = false } = {}) {
   try {
-    const post = await generatePost(type);
-    console.log('Пост готов:', post.substring(0, 80) + '...');
-
-    for (const channel of CHANNELS) {
-      const result = await sendToChannel(channel, post);
-      if (result.ok) {
-        console.log(`✅ Отправлено в ${channel}`);
-      } else {
-        console.log(`❌ Ошибка в ${channel}:`, result.description);
+    const post = kind === 'morning' ? await morningPost() : await eveningPost();
+    console.log(`[${post.label}]\n---\n${post.text}${post.poll ? '\nОПРОС: ' + post.poll.question + '\n- ' + post.poll.options.join('\n- ') : ''}\n---`);
+    if (dryRun) return;
+    for (const ch of CHANNELS) {
+      const r = await apiRequest('api.telegram.org', `/bot${TG_TOKEN}/sendMessage`, { chat_id: ch, text: post.text });
+      console.log(r.ok ? `✅ ${ch}` : `❌ ${ch}: ${r.description}`);
+      if (post.poll) {
+        const p = await apiRequest('api.telegram.org', `/bot${TG_TOKEN}/sendPoll`, {
+          chat_id: ch, question: post.poll.question.slice(0, 300),
+          options: post.poll.options.slice(0, 10).map(o => ({ text: String(o).slice(0, 100) })), is_anonymous: true,
+        });
+        console.log(p.ok ? `✅ опрос ${ch}` : `❌ опрос ${ch}: ${p.description}`);
       }
     }
-  } catch(e) {
+  } catch (e) {
     console.error('Ошибка:', e.message);
   }
 }
 
-function getMoscowTime() {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  return new Date(utc + 3 * 3600000);
+function scheduleAt(hour, kind) {
+  const m = getMoscowNow();
+  const next = new Date(m);
+  next.setHours(hour, 0, 0, 0);
+  if (m >= next) next.setDate(next.getDate() + 1);
+  console.log(`${kind}: через ${Math.round((next - m) / 60000)} мин`);
+  setTimeout(async () => { await publish(kind); scheduleAt(hour, kind); }, next - m);
 }
 
-function msUntil(targetHour, targetMin = 0) {
-  const moscow = getMoscowTime();
-  const target = new Date(moscow);
-  target.setHours(targetHour, targetMin, 0, 0);
-  if (moscow >= target) target.setDate(target.getDate() + 1);
-  return target - moscow;
+if (process.argv.includes('--dry-morning')) publish('morning', { dryRun: true });
+else if (process.argv.includes('--dry-evening')) publish('evening', { dryRun: true });
+else {
+  console.log(`🤖 Бот глубокого постинга запущен → ${CHANNELS.join(', ')}`);
+  scheduleAt(10, 'morning');
+  scheduleAt(18, 'evening');
+  if (process.argv.includes('--test-morning')) publish('morning');
+  if (process.argv.includes('--test-evening')) publish('evening');
 }
-
-function scheduleDaily() {
-  const moscow = getMoscowTime();
-  console.log(`Бот запущен. Время МСК: ${moscow.getHours()}:${String(moscow.getMinutes()).padStart(2,'0')}`);
-
-  const msToMorning = msUntil(10);
-  const msToEvening = msUntil(18);
-
-  console.log(`Утренний пост через ${Math.round(msToMorning/60000)} мин`);
-  console.log(`Вечерний пост через ${Math.round(msToEvening/60000)} мин`);
-
-  setTimeout(() => {
-    postToAll('morning');
-    setInterval(() => postToAll('morning'), 24 * 60 * 60 * 1000);
-  }, msToMorning);
-
-  setTimeout(() => {
-    postToAll('evening');
-    setInterval(() => postToAll('evening'), 24 * 60 * 60 * 1000);
-  }, msToEvening);
-}
-
-console.log('🤖 Бот глубокого постинга запущен');
-scheduleDaily();
-
-if (process.argv.includes('--test-morning')) postToAll('morning');
-if (process.argv.includes('--test-evening')) postToAll('evening');
