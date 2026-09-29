@@ -5,6 +5,7 @@ const TG_TOKEN = process.env.TG_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const CHANNELS = (process.env.CHANNELS || '@Helpforaddicts').split(',').map(s => s.trim());
 const MODEL = process.env.MODEL || 'claude-sonnet-4-6';
+const FEED_CHANNEL = 'vl';
 
 // Нумерация #деньN сохранена: 16.04.2026 был день 76
 function getDayNumber() {
@@ -122,20 +123,92 @@ async function claude(userPrompt, maxTokens) {
   return r.content.map(i => i.text || '').join('').trim().replace(/\*\*/g, '').replace(/#\S+/g, '').trim();
 }
 
+// ─────────── ТЕМЫ НЕДЕЛИ ИЗ ПРОГРАММЫ (одобренные в админке) ───────────
+// Если FEED_URL и FEED_KEY не заданы — бот работает по своему списку тем, как раньше.
+const http = require('http');
+const FEED_URL = (process.env.FEED_URL || '').replace(/\/$/, '');   // напр. http://194.67.74.45
+const FEED_KEY = process.env.FEED_KEY || '';
+const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '';              // куда слать копию для MAX
+
+function feedRequest(method, path, data) {
+  return new Promise(resolve => {
+    if (!FEED_URL || !FEED_KEY) return resolve(null);
+    const u = new URL(FEED_URL + path);
+    const body = data ? JSON.stringify(data) : '';
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.request({
+      hostname: u.hostname, port: u.port || undefined, path: u.pathname + u.search, method,
+      headers: { 'X-Feed-Key': FEED_KEY, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: 15000,
+    }, res => {
+      res.setEncoding('utf8');
+      let d = '';
+      res.on('data', c => (d += c));
+      res.on('end', () => { try { resolve(res.statusCode === 200 ? JSON.parse(d) : null); } catch (e) { resolve(null); } });
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', e => { console.error('Лента тем недоступна:', e.message); resolve(null); });
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+// Берёт следующую одобренную тему для канала или null
+async function nextFeedTopic() {
+  const r = await feedRequest('GET', `/api/content-feed/next?channel=${FEED_CHANNEL}`);
+  return r && r.item ? r.item : null;
+}
+
+async function markFeedPublished(item, messageUrl) {
+  if (!item) return;
+  await feedRequest('POST', '/api/content-feed/published', {
+    digestId: item.digestId, index: item.index, channel: FEED_CHANNEL, messageUrl: messageUrl || null,
+  });
+}
+
+function feedPromptBlock(item) {
+  return `Сегодня тема взята из того, что на этой неделе реально всплывало у людей в работе (обобщённо):
+«${item.title}» — ${item.summary || ''}
+${item.question ? 'Вопрос-крючок: ' + item.question : ''}
+Бери только суть. Не цитируй людей, не упоминай программу, центр, резидентов, группу, консультанта; никаких биографических деталей (пол, возраст, сроки, роли вроде «жена», «девушка из программы»). Пиши так, чтобы в этом узнал себя любой читатель канала, а не конкретный человек.`;
+}
+
+// Копия поста тебе в личку — для ручной вставки в MAX
+async function sendMaxCopy(label, text) {
+  if (!OWNER_CHAT_ID) return;
+  await apiRequest('api.telegram.org', `/bot${TG_TOKEN}/sendMessage`, {
+    chat_id: OWNER_CHAT_ID, text: `📋 Для MAX (${label}) — скопируй и вставь:\n\n${text}`,
+  });
+}
+
+function postUrl(channel, result) {
+  const id = result && result.result && result.result.message_id;
+  return id && channel.startsWith('@') ? `https://t.me/${channel.slice(1)}/${id}` : null;
+}
+
+// Тема дня: если утром взяли тему недели — вечер идёт по ней же
+let feedToday = null; // { day, item }
+function currentTopic() {
+  const d = dayOfYear(getMoscowNow());
+  return feedToday && feedToday.day === d ? feedToday.item.title : todayTopic();
+}
+
 function tags(extra = '') {
   return `\n\n#восстановлениеличности #день${getDayNumber()}${extra}`;
 }
 
 async function morningPost() {
-  const topic = todayTopic();
+  const item = await nextFeedTopic();
+  if (item) feedToday = { day: dayOfYear(getMoscowNow()), item };
+  const topic = item ? item.title : todayTopic();
   const lens = LENSES[getMoscowNow().getDay()];
-  const text = await claude(`Тема: «${topic}».\nЛинза сегодня: ${lens}\n\nНапиши только текст поста.`, 1200);
-  return { text: text + tags(), label: `утро | ${topic}` };
+  const text = await claude(`${item ? feedPromptBlock(item) + '\n\n' : ''}Тема: «${topic}».\nЛинза сегодня: ${lens}\n\nНапиши только текст поста.`, 1200);
+  return { text: text + tags(), label: `утро${item ? ' [тема недели]' : ''} | ${topic}`, feedItem: item };
 }
 
 // Вечер: чётные дни — чек-лист, нечётные — опрос (настоящий Telegram-опрос)
 async function eveningPost() {
-  const topic = todayTopic();
+  const topic = currentTopic();
   if (dayOfYear(getMoscowNow()) % 2 === 0) {
     const text = await claude(
       `Вечерний ЧЕК-ЛИСТ по теме утра: «${topic}».
@@ -155,9 +228,11 @@ async function publish(kind, { dryRun = false } = {}) {
     const post = kind === 'morning' ? await morningPost() : await eveningPost();
     console.log(`[${post.label}]\n---\n${post.text}${post.poll ? '\nОПРОС: ' + post.poll.question + '\n- ' + post.poll.options.join('\n- ') : ''}\n---`);
     if (dryRun) return;
+    let url = null;
     for (const ch of CHANNELS) {
       const r = await apiRequest('api.telegram.org', `/bot${TG_TOKEN}/sendMessage`, { chat_id: ch, text: post.text });
       console.log(r.ok ? `✅ ${ch}` : `❌ ${ch}: ${r.description}`);
+      if (r.ok && !url) url = postUrl(ch, r);
       if (post.poll) {
         const p = await apiRequest('api.telegram.org', `/bot${TG_TOKEN}/sendPoll`, {
           chat_id: ch, question: post.poll.question.slice(0, 300),
@@ -165,6 +240,11 @@ async function publish(kind, { dryRun = false } = {}) {
         });
         console.log(p.ok ? `✅ опрос ${ch}` : `❌ опрос ${ch}: ${p.description}`);
       }
+    }
+    if (url) {
+      if (post.feedItem) await markFeedPublished(post.feedItem, url);
+      const maxText = post.poll ? `${post.text}\n\nОПРОС: ${post.poll.question}\n— ${post.poll.options.join('\n— ')}` : post.text;
+      await sendMaxCopy('Восстановление личности', maxText);
     }
   } catch (e) {
     console.error('Ошибка:', e.message);
